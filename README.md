@@ -21,6 +21,12 @@ A simple desktop application in Java Swing to organize files in a selected folde
 
 ---
 
+## Screenshots
+
+<img width="734" height="255" alt="image" src="https://github.com/user-attachments/assets/ecbe5d7a-c13c-4d4d-bfff-547f5bf1742c" />
+<img width="1893" height="1000" alt="image" src="https://github.com/user-attachments/assets/8030fb5a-8df1-458c-a8d7-69ccab8b5424" />
+
+
 ## How to Run
 
 ### Prerequisites
