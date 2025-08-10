@@ -10,31 +10,40 @@ import javax.swing.*;
 
 public class FileOrganizerGUI extends JFrame {
     private JTextField folderPathField;
+    private JProgressBar progressBar;
     private static final String UNDO_LOG = "undo_log.txt";
 
     public FileOrganizerGUI() {
         setTitle("File Organizer");
-        setSize(500, 200);
+        setSize(600, 220);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new FlowLayout());
 
-        folderPathField = new JTextField(30);
+        folderPathField = new JTextField(35);
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
 
-        // Enable drag and drop on the folderPathField
-        new DropTarget(folderPathField, new DropTargetListener() {
-            @Override
+        JButton browseButton = new JButton("Browse");
+        JButton organizeButton = new JButton("Organize");
+        JButton undoButton = new JButton("Undo");
+
+        add(new JLabel("Folder Path:"));
+        add(folderPathField);
+        add(browseButton);
+        add(organizeButton);
+        add(undoButton);
+        add(progressBar);
+
+        browseButton.addActionListener(e -> browseFolder());
+        organizeButton.addActionListener(e -> organizeFiles(folderPathField.getText()));
+        undoButton.addActionListener(e -> undoLastOrganization());
+
+        // Make entire window accept folder drag and drop
+        new DropTarget(this, new DropTargetListener() {
             public void dragEnter(DropTargetDragEvent dtde) {}
-
-            @Override
             public void dragOver(DropTargetDragEvent dtde) {}
-
-            @Override
             public void dropActionChanged(DropTargetDragEvent dtde) {}
-
-            @Override
             public void dragExit(DropTargetEvent dte) {}
-
-            @Override
             public void drop(DropTargetDropEvent dtde) {
                 try {
                     dtde.acceptDrop(DnDConstants.ACTION_COPY);
@@ -61,20 +70,6 @@ public class FileOrganizerGUI extends JFrame {
                 }
             }
         });
-
-        JButton browseButton = new JButton("Browse");
-        JButton organizeButton = new JButton("Organize");
-        JButton undoButton = new JButton("Undo");
-
-        add(new JLabel("Folder Path:"));
-        add(folderPathField);
-        add(browseButton);
-        add(organizeButton);
-        add(undoButton);
-
-        browseButton.addActionListener(e -> browseFolder());
-        organizeButton.addActionListener(e -> organizeFiles(folderPathField.getText()));
-        undoButton.addActionListener(e -> undoLastOrganization());
 
         setLocationRelativeTo(null);
         setVisible(true);
@@ -115,28 +110,50 @@ public class FileOrganizerGUI extends JFrame {
             return;
         }
 
-        try (BufferedWriter logWriter = new BufferedWriter(new FileWriter(UNDO_LOG))) {
-            for (File file : files) {
-                if (file.isFile()) {
-                    String extension = getFileExtension(file.getName());
-                    String category = extensionMap.getOrDefault(extension, "Others");
+        SwingWorker<Void, Integer> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                try (BufferedWriter logWriter = new BufferedWriter(new FileWriter(UNDO_LOG))) {
+                    int total = files.length;
+                    int count = 0;
+                    for (File file : files) {
+                        if (file.isFile()) {
+                            String extension = getFileExtension(file.getName());
+                            String category = extensionMap.getOrDefault(extension, "Others");
 
-                    File categoryFolder = new File(folderPath + "/" + category);
-                    if (!categoryFolder.exists()) {
-                        categoryFolder.mkdir();
+                            File categoryFolder = new File(folderPath + "/" + category);
+                            if (!categoryFolder.exists()) {
+                                categoryFolder.mkdir();
+                            }
+
+                            File newFile = new File(categoryFolder, file.getName());
+                            Files.move(file.toPath(), newFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
+                            logWriter.write(newFile.getAbsolutePath() + "|" + file.getAbsolutePath());
+                            logWriter.newLine();
+                        }
+                        count++;
+                        int progress = (int) ((count / (double) total) * 100);
+                        publish(progress);
                     }
-
-                    File newFile = new File(categoryFolder, file.getName());
-                    Files.move(file.toPath(), newFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-
-                    logWriter.write(newFile.getAbsolutePath() + "|" + file.getAbsolutePath());
-                    logWriter.newLine();
                 }
+                return null;
             }
-            JOptionPane.showMessageDialog(this, "Files organized successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-        } catch (IOException ex) {
-            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
+
+            @Override
+            protected void process(java.util.List<Integer> chunks) {
+                int latestProgress = chunks.get(chunks.size() - 1);
+                progressBar.setValue(latestProgress);
+            }
+
+            @Override
+            protected void done() {
+                progressBar.setValue(100);
+                JOptionPane.showMessageDialog(FileOrganizerGUI.this, "Files organized successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            }
+        };
+
+        worker.execute();
     }
 
     private void undoLastOrganization() {
@@ -156,6 +173,7 @@ public class FileOrganizerGUI extends JFrame {
                 Files.move(currentFile.toPath(), originalFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
             logFile.delete();
+            progressBar.setValue(0);
             JOptionPane.showMessageDialog(this, "Files restored successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, "Error during undo: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
